@@ -6,9 +6,12 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import time
 
+print("started up")
+deviceIndex = int(input("Enter the index of the desired input device: "))
+
 gl.runProgram()
 
-print("Hello World\n")
+print("Initializing...\n")
 
 CHUNK = 1764 # 40.0 ms
 FORMAT = pyaudio.paInt16
@@ -23,7 +26,7 @@ stream = p.open(
     input=True,
     output=True,
     frames_per_buffer=CHUNK,
-    input_device_index=2 # virtual audio cable index is 2
+    input_device_index=deviceIndex # virtual audio cable index is 2
 )
 
 bars = 3
@@ -80,11 +83,9 @@ try:
         if (bin2av < 0):
             bin2av = 0
 
-        bin0av = bin0av * 0.2 + binVals[0] * 0.8 # 0.2 - 0.8
+        bin0av = bin0av * 0.2 + binVals[0] * 0.8
         bin1av = bin1av * 0.7 + binVals[1] * 0.3
         bin2av = bin2av * 0.7 + binVals[2] * 0.3
-
-        #print(binVals)
 
         gl.setShaderBrightness(max((bin1av - 4) / 6, 0.0))
         gl.setMountainHeight(
@@ -92,12 +93,7 @@ try:
             max(bin1av, 0.0),
             max(bin2av, 0.0)
         )
-        
-        #k += 1
-        #if (time.time() - start > 1.0):
-        #    print(k)
-        #    k = 0
-        #    start = time.time()
+
 except KeyboardInterrupt:
     pass
 
