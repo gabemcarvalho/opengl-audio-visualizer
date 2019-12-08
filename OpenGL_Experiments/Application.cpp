@@ -14,9 +14,10 @@
 #include <pybind11/pybind11.h>
 using namespace glm;
 
-const int noiseSize = 32;
+const int noiseSize = 24;
 const double windowWidth = 1920;//1024; 1920
 const double windowHeight = 1080;// 576; 1080
+const int chunks = 8;
 
 std::string getVertexShaderString() {
 	return
@@ -43,11 +44,15 @@ std::string getFragmentShaderString() {
 		"#version 330 core\n"
 		"in float fragmentColor;\n"
 		"in float zPos;\n"
-		"out vec3 color;\n"
+		"out vec4 color;\n"
+
+		"uniform float rAmt;\n"
+		"uniform float gAmt;\n"
+		"uniform float bAmt;\n"
 
 		"void main() {\n"
 		"	float colAmount = fragmentColor + 0.13 * zPos;\n"
-		"	color = vec3(colAmount, 0.1 * colAmount, 0.7 * colAmount);//fragmentColor;\n"
+		"	color = vec4(colAmount * rAmt, colAmount * gAmt, colAmount * bAmt, colAmount * 1.5);//fragmentColor;\n"
 		"}\n";
 }
 
@@ -126,24 +131,24 @@ private:
 	std::uint32_t seed;
 	double wavelength;
 	int octaves;
-	double shaderBrightness = 0.7;
+	double shaderBrightness = 0.9; // 0.7
+	double shaderR = 1.0;
+	double shaderG = 0.1;
+	double shaderB = 0.7;
 	
 	std::thread glThread;
 	bool stopProgram = false;
 
-	std::vector<float> noise;
 	std::vector<float> noise1;
 	std::vector<float> noise2;
 	std::vector<float> noise3;
-	GLfloat g_vertex_buffer_data[noiseSize * noiseSize * 3];
-
-	bool updateVertices = false;
+	GLfloat g_vertex_buffer_data[noiseSize * noiseSize * 3 * chunks];
 	
 	class heightPIDController {
 	private:
-		double kP = 0.16;//08
-		double kI = 0.12;//16
-		double kD = 0.08;//08
+		double kP = 0.16;
+		double kI = 0.12;
+		double kD = 0.08;
 		double error = 0;
 		double totalError = 0;
 		double lastError = 0;
@@ -184,14 +189,26 @@ public:
 	void run() {
 		#pragma region Noise
 		fprintf(stderr, "Random seed is %d\n", seed);
+
+		double yoffset = 0.0;
+		double yscrollspeed = 0.3;
+		int ysteps = 0;
+
+		double peaksArray[noiseSize];
+		double pi = 3.141592653589;
+		for (int i = 0; i < noiseSize; i++) {
+			peaksArray[i] = 1.0 + sin(pi * i / (noiseSize - 1) * 3.0) - cos(pi * i / (noiseSize - 1) * 2.0) - sin(pi * i / (noiseSize - 1));
+		}
 		
 		const siv::PerlinNoise perlin(seed);
-		for (int i = 0; i < noiseSize; i++) {
-			for (int j = 0; j < noiseSize; j++) {
-				noise.push_back(max(perlin.octaveNoise0_1(i / wavelength, j / wavelength, octaves) * 10 - 4, 0.0) * 2.0);
-				noise1.push_back(max(perlin.octaveNoise0_1(i / wavelength, j / wavelength, 1) * 10 - 4, 0.0) * 1.5);
-				noise2.push_back(perlin.octaveNoise0_1(i / (wavelength / 2), j / (wavelength / 2), 1) * 5.0 - 3.0);
-				noise3.push_back(perlin.octaveNoise0_1(i / (wavelength / 4), j / (wavelength / 4), 1) * 4.0 - 1.0);
+		for (int k = 0; k < chunks; k++) {
+			int koffset = k * (noiseSize - 1);
+			for (int i = 0; i < noiseSize; i++) {
+				for (int j = 0; j < noiseSize; j++) {
+					noise1.push_back(max(perlin.octaveNoise0_1((i + koffset) / wavelength, j / wavelength, 1) * 10 - 4, 0.0) * 1.5);
+					noise2.push_back(perlin.octaveNoise0_1((i + koffset) / (wavelength / 2), j / (wavelength / 2), 1) * 5.0 - 3.0);
+					noise3.push_back(perlin.octaveNoise0_1((i + koffset) / (wavelength / 4), j / (wavelength / 4), 1) * 4.0 - 1.0);
+				}
 			}
 		}
 		#pragma endregion
@@ -233,33 +250,40 @@ public:
 
 		// Vertices
 		int index = 0;
-		for (int j = 0; j < noiseSize; j++) {
-			for (int i = 0; i < noiseSize; i++) {
-				g_vertex_buffer_data[index] = i - noiseSize / 2;
-				index++;
-				g_vertex_buffer_data[index] = noise.at(i + noiseSize * j);//noise[i][j];
-				index++;
-				g_vertex_buffer_data[index] = j - noiseSize / 2;
-				index++;
+		for (int k = 0; k < chunks; k++) {
+			int koffset = k * (noiseSize - 1);
+			for (int j = 0; j < noiseSize; j++) {
+				for (int i = 0; i < noiseSize; i++) {
+					g_vertex_buffer_data[index] = i - noiseSize / 2;
+					index++;
+					g_vertex_buffer_data[index] = 0;
+					index++;
+					g_vertex_buffer_data[index] = j - noiseSize / 2 + koffset;
+					index++;
+				}
 			}
 		}
 
 		GLuint vertexbuffer;
 		glGenBuffers(1, &vertexbuffer);
 		glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
-		glBufferStorage(GL_ARRAY_BUFFER, noiseSize * noiseSize * 3 * sizeof(GLfloat), g_vertex_buffer_data, GL_DYNAMIC_STORAGE_BIT);
+		glBufferStorage(GL_ARRAY_BUFFER, noiseSize * noiseSize * 3 * chunks * sizeof(GLfloat), g_vertex_buffer_data, GL_DYNAMIC_STORAGE_BIT);
 
 		// Vertex indices
 		std::vector<unsigned short> indices;
-		for (int j = 0; j < noiseSize - 1; j++) {
-			for (int i = 0; i < noiseSize - 1; i++) {
-				index = i + noiseSize * j;
-				indices.push_back(index);
-				indices.push_back(index + 1);
-				indices.push_back(index + noiseSize);
-				indices.push_back(index + 1);
-				indices.push_back(index + noiseSize);
-				indices.push_back(index + noiseSize + 1);
+		for (int k = 0; k < chunks; k++) {
+			int koffset = noiseSize * noiseSize * k;
+			for (int j = 0; j < noiseSize - 1; j++) {
+				int joffset = noiseSize * j;
+				for (int i = 0; i < noiseSize - 1; i++) {
+					index = i + joffset + koffset;
+					indices.push_back(index);
+					indices.push_back(index + 1);
+					indices.push_back(index + noiseSize);
+					indices.push_back(index + 1);
+					indices.push_back(index + noiseSize);
+					indices.push_back(index + noiseSize + 1);
+				}
 			}
 		}
 
@@ -275,18 +299,22 @@ public:
 		glm::vec3 position = glm::vec3(0, 10, 16);
 		float horizontalAngle = 3.14f; // horizontal angle : toward -Z
 		float verticalAngle = 0.0f; // vertical angle : 0, look at the horizon
-		float initialFoV = 60.0f; //45
+		float FoV = 100.0f; //45
 		float speed = 6.0f; // 3 units / second
+		float fovspeed = 50.0;
 		float mouseSpeed = 0.1f;
 		bool mouseControlsOn = false;
 		bool rotatingCamera = true;
 
 		// Graphics settings
-		glLineWidth(1.0);
+		glLineWidth(2.0);
 		glClearColor(0.05f, 0.0f, 0.15f, 0.0f);
 		//glClearColor(0.35f, 0.4f, 0.9f, 0.0f); // windowx xp land background
 		glEnable(GL_DEPTH_TEST);
 		glDepthFunc(GL_LESS);
+		glEnable(GL_BLEND);
+		// glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // normal blending
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE); // additive blending
 		//glEnable(GL_CULL_FACE);
 
 		// Init shaders
@@ -308,25 +336,50 @@ public:
 			currentTime += deltaTime;
 			glfwSetTime(0);
 
-
-			// Update mountain heights
-			//if (updateVertices) {
-				int ind = 1;
-				mLow.step();
-				mMid.step();
-				mHi.step();
+			// Update position
+			yoffset += yscrollspeed;
+			if (yoffset > (ysteps + 1) * (noiseSize - 1)) {
+				// Load a new chunk (update z coordinates and noise)
+				int arrayPos = ysteps % chunks;
+				int zOrigin = (ysteps + chunks) * (noiseSize - 1);
+				index = 2 + arrayPos * noiseSize * noiseSize * 3;
 				for (int j = 0; j < noiseSize; j++) {
 					for (int i = 0; i < noiseSize; i++) {
-						g_vertex_buffer_data[ind] = 
-							mLow.getValue() * noise1.at(i + noiseSize * j) +
-							mMid.getValue() * noise2.at(i + noiseSize * j) +
-							mHi.getValue()  * noise3.at(i + noiseSize * j);
+						g_vertex_buffer_data[index] = j - noiseSize / 2 + zOrigin;
+						index += 3;
+					}
+				}
+				for (int i = 0; i < noiseSize; i++) {
+					for (int j = 0; j < noiseSize; j++) {
+						index = j + i * noiseSize + arrayPos * noiseSize * noiseSize;
+						noise1[index] = max(perlin.octaveNoise0_1((i + zOrigin) / wavelength, j / wavelength, 1) * 10 - 4, 0.0) * 1.5;
+						noise2[index] = perlin.octaveNoise0_1((i + zOrigin) / (wavelength / 2), j / (wavelength / 2), 1) * 5.0 - 3.0;
+						noise3[index] = perlin.octaveNoise0_1((i + zOrigin) / (wavelength / 4), j / (wavelength / 4), 1) * 4.0 - 1.0;
+					}
+				}
+				ysteps++;
+			}
+
+			// Update mountain heights
+			int ind = 1;
+			mLow.step();
+			mMid.step();
+			mHi.step();
+			for (int k = 0; k < chunks; k++) {
+				int koffset = k * noiseSize * noiseSize;
+				for (int j = 0; j < noiseSize; j++) {
+					int joffset = j * noiseSize;
+					for (int i = 0; i < noiseSize; i++) {
+						double iscale = peaksArray[i]; // abs(i - noiseSize / 2.0) / (noiseSize / 2.0) + 0.05;
+						g_vertex_buffer_data[ind] = iscale * (
+							mLow.getValue() * noise1.at(i + joffset + koffset) +
+							mMid.getValue() * noise2.at(i + joffset + koffset) +
+							mHi.getValue() * noise3.at(i + joffset + koffset));
 						ind += 3;
 					}
 				}
-				glBufferSubData(GL_ARRAY_BUFFER, 0, noiseSize * noiseSize * 3 * sizeof(GLfloat), g_vertex_buffer_data);
-				updateVertices = false;
-			//}
+			}
+			glBufferSubData(GL_ARRAY_BUFFER, 0, noiseSize * noiseSize * 3 * chunks * sizeof(GLfloat), g_vertex_buffer_data);
 			
 			// Clear the screen.
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -366,10 +419,11 @@ public:
 			if (rotatingCamera) {
 				double cameraRadius = noiseSize / 2.0;
 				double cameraPeriod = 24.0;
-				double cameraHeight = 15.0;
-				verticalAngle = atan(-(cameraHeight - 4.0) / cameraRadius);
-				horizontalAngle = 3.14 / cameraPeriod * currentTime;
-				position = vec3(-cameraRadius * sin(horizontalAngle), cameraHeight, -cameraRadius * cos(horizontalAngle));
+				double cameraHeight = 2.0; // 15.0;
+				verticalAngle = 0; // atan(-(cameraHeight - 4.0) / cameraRadius);
+				horizontalAngle = 0; // 3.14 / cameraPeriod * currentTime;
+				// position = vec3(-cameraRadius * sin(horizontalAngle), cameraHeight, -cameraRadius * cos(horizontalAngle));
+				position = vec3(0, cameraHeight, yoffset);
 			}
 
 			glm::vec3 direction(
@@ -408,8 +462,26 @@ public:
 			if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
 				position.y -= deltaTime * speed;
 			}
+			// FoV up
+			if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
+				FoV += deltaTime * fovspeed;
+			}
+			// FoV down
+			if (glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS) {
+				FoV -= deltaTime * fovspeed;
+			}
+			FoV = clamp<float>(FoV, 45, 120);
 
-			float FoV = initialFoV; // -5 * glfwGetMouseWheel(); // THIS DOESN'T WORK
+			// Shader Controls
+			if (glfwGetKey(window, GLFW_KEY_U) == GLFW_PRESS) shaderR += 0.01;
+			if (glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS) shaderR -= 0.01;
+			if (glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS) shaderG += 0.01;
+			if (glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS) shaderG -= 0.01;
+			if (glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS) shaderB += 0.01;
+			if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS) shaderB -= 0.01;
+			shaderR = clamp<float>(shaderR, 0.0, 1.0);
+			shaderG = clamp<float>(shaderG, 0.0, 1.0);
+			shaderB = clamp<float>(shaderB, 0.0, 1.0);
 
 			glm::mat4 ProjectionMatrix = glm::perspective(glm::radians(FoV), 4.0f / 3.0f, 0.1f, 120.0f); // aspect ratio 4:3, draw distance 120
 			glm::mat4 ViewMatrix = glm::lookAt(
@@ -425,7 +497,13 @@ public:
 
 			// Use shader
 			GLuint DrawColID = glGetUniformLocation(programID, "drawCol");
+			GLuint rColID = glGetUniformLocation(programID, "rAmt");
+			GLuint gColID = glGetUniformLocation(programID, "gAmt");
+			GLuint bColID = glGetUniformLocation(programID, "bAmt");
 			glUniform1f(DrawColID, shaderBrightness);
+			glUniform1f(rColID, shaderR);
+			glUniform1f(gColID, shaderG);
+			glUniform1f(bColID, shaderB);
 			glUseProgram(programID);
 
 			// Index buffer
@@ -442,6 +520,9 @@ public:
 
 			// Draw triangles again
 			glUniform1f(DrawColID, shaderBrightness + 0.4);
+			glUniform1f(rColID, shaderR);
+			glUniform1f(gColID, shaderG);
+			glUniform1f(bColID, shaderB);
 			glPolygonOffset(-1, -1);
 			glEnable(GL_POLYGON_OFFSET_LINE);
 			glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -493,7 +574,6 @@ public:
 		mLow.setTarget(low);
 		mMid.setTarget(mid);
 		mHi.setTarget(high);
-		updateVertices = true;
 	}
 
 };
