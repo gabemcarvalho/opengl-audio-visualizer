@@ -12,6 +12,8 @@
     <Name>PythonWrapper</Name>
     <RootNamespace>PythonWrapper</RootNamespace>
     <InterpreterId>MSBuild|env32|$(MSBuildProjectFullPath)</InterpreterId>
+    <PublishUrl>
+    </PublishUrl>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
     <DebugSymbols>true</DebugSymbols>
