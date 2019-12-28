@@ -30,13 +30,6 @@
     <Compile Include="PythonWrapper.py" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\OpenGL_Experiments\OpenGL_Experiments.vcxproj">
-      <Name>OpenGL_Experiments</Name>
-      <Project>{65dd12bf-3b95-4230-8fc0-8fa53119a0fb}</Project>
-      <Private>True</Private>
-    </ProjectReference>
-  </ItemGroup>
-  <ItemGroup>
     <Interpreter Include="env32\">
       <Id>env32</Id>
       <Version>3.7</Version>

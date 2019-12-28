@@ -1,4 +1,4 @@
-import OpenGL_Experiments as gl
+from OpenglBuild import OpenGL_Experiments as gl
 import pyaudio
 import struct
 import numpy as np

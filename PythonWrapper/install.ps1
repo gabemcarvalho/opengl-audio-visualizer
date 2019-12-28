@@ -1,0 +1,1 @@
+./env32/Scripts/pyinstaller.exe PythonWrapper.py

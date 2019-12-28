@@ -1,1 +1,0 @@
-./env32/Scripts/python.exe PythonWrapper.py
