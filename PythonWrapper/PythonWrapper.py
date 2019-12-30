@@ -2,9 +2,6 @@ from OpenglBuild import OpenGL_Experiments as gl
 import pyaudio
 import struct
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-import time
 
 print("started up")
 deviceIndex = int(input("Enter the index of the desired input device: "))
@@ -64,13 +61,8 @@ bin0av = 0
 bin1av = 0
 bin2av = 0
 
-start = time.time()
-k = 0
-
 try:
-    k = 0
     while True:
-
         dataString = stream.read(CHUNK)
         data = np.divide( struct.unpack(str(CHUNK) + 'h', dataString), 32768.0 )
         data_int = np.log10(np.abs( np.fft.fft(data) ))
